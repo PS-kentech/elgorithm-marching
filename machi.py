@@ -90,31 +90,27 @@ def load_points_from_csv(filepath):
     else:
         raise ValueError("CSV file must have x, y, z, and metric columns")
 
-def load_edges_from_json(json_path):
-    with open(json_path, 'r') as f:
+def load_edges_from_json(filepath):
+    with open(filepath, 'r') as f:
         edges = json.load(f)
-    return edges
-
-def plot_edges(edges, color='gray', width=3, name='Building Edges'):
-    edge_traces = []
-    for edge in edges:
-        p1, p2 = edge
-        xs, ys, zs = [p1[0], p2[0]], [p1[1], p2[1]], [p1[2], p2[2]]
-        trace = go.Scatter3d(
+    traces = []
+    for i, (start, end) in enumerate(edges):
+        xs, ys, zs = zip(start, end)
+        traces.append(go.Scatter3d(
             x=xs, y=ys, z=zs,
             mode='lines',
-            line=dict(color=color, width=width),
-            name=name,
+            line=dict(color='gray', width=4),
+            name=f'Edge {i+1}',
             showlegend=False
-        )
-        edge_traces.append(trace)
-    return edge_traces
+        ))
+    return traces
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--csv', type=str, help='Path to CSV file')
-    parser.add_argument('--edges', type=str, help='Path to JSON file with building edges')
     parser.add_argument('--levels', type=int, nargs='+', default=[20, 60], help='List of signal boundaries')
+    parser.add_argument('--show_points', action='store_true', help='Visualize signal points')
+    parser.add_argument('--edges', type=str, help='Path to JSON file containing edge lines')
     args = parser.parse_args()
 
     if args.csv and os.path.exists(args.csv):
@@ -125,26 +121,38 @@ if __name__ == '__main__':
         every_points, Rs = generate_sample_data()
         print(f"Generated {len(every_points)} sample points")
 
-    edges = []
-    if args.edges and os.path.exists(args.edges):
-        edges = load_edges_from_json(args.edges)
-        print(f"Loaded {len(edges)} edge lines from JSON")
-
     while True:
         surfaces = [
             plot_isosurface(every_points, level=lv, color='green' if lv >= 50 else 'red', name=f'Signal ≥ {lv}')
             for lv in args.levels
         ]
 
-        fig = go.Figure(data=surfaces + [
-            go.Scatter3d(x=every_points[:, 0], y=every_points[:, 1], z=every_points[:, 2],
-                         mode='markers', marker=dict(size=2, color=every_points[:, 3], colorscale='Viridis', opacity=0.6),
-                         name='Signal Points')
-        ] + (
-            [go.Scatter3d(x=Rs[:, 0], y=Rs[:, 1], z=Rs[:, 2], mode='markers', marker=dict(size=6, color='black', symbol='x'),
-                          name='Wi-Fi Sources')] if Rs is not None else []
-        ) + plot_edges(edges))
+        fig_data = surfaces
 
+        if args.show_points:
+            fig_data.append(
+                go.Scatter3d(
+                    x=every_points[:, 0], y=every_points[:, 1], z=every_points[:, 2],
+                    mode='markers',
+                    marker=dict(size=2, color=every_points[:, 3], colorscale='Viridis', opacity=0.6),
+                    name='Signal Points'
+                )
+            )
+
+        if Rs is not None:
+            fig_data.append(
+                go.Scatter3d(
+                    x=Rs[:, 0], y=Rs[:, 1], z=Rs[:, 2],
+                    mode='markers',
+                    marker=dict(size=6, color='black', symbol='x'),
+                    name='Wi-Fi Sources'
+                )
+            )
+
+        if args.edges and os.path.exists(args.edges):
+            fig_data += load_edges_from_json(args.edges)
+
+        fig = go.Figure(data=fig_data)
         fig.update_layout(title='Marching Cube Visualization', scene=dict(xaxis_title='X', yaxis_title='Y', zaxis_title='Z'))
         fig.show()
 
@@ -153,9 +161,18 @@ if __name__ == '__main__':
             if user_input.lower() == 'exit':
                 break
             x, y, z, val = map(float, user_input.strip().split())
-            distances = np.linalg.norm(every_points[:, :3] - np.array([x, y, z]), axis=1)
-            nearest_idx = np.argmin(distances)
-            every_points[nearest_idx, 3] = val
-            print(f"Updated point at index {nearest_idx} to value {val}")
+
+            action = input("Type 'update' to modify nearest point or 'new' to add a new point: ").strip().lower()
+            if action == 'update':
+                distances = np.linalg.norm(every_points[:, :3] - np.array([x, y, z]), axis=1)
+                nearest_idx = np.argmin(distances)
+                old_val = every_points[nearest_idx, 3]
+                every_points[nearest_idx, 3] = val
+                print(f"Updated point at index {nearest_idx} from {old_val:.2f} to {val}")
+            elif action == 'new':
+                every_points = np.vstack([every_points, np.array([[x, y, z, val]])])
+                print(f"Added new point at ({x}, {y}, {z}) with value {val}")
+            else:
+                print("Invalid action. Please type 'update' or 'new'.")
         except Exception as e:
             print(f"Invalid input: {e}")
