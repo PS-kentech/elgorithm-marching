@@ -8,6 +8,9 @@ leave empty to visualize randomly generated one with 1 ~ 8 router visualized
 use --levels (positive boundary: green) (negative boundary: red) to adjust boundaries
 default is --levels 60 20
 
+--show_points
+each sample point will not be visible by default, add this to visualize them all
+
 input (x cord) (y cord) (z cord) (metric) to update the map
 it will change the most near existing point's metric and update the visualization result
 
